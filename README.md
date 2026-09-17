@@ -1,398 +1,112 @@
-# Authentication Microservice API
+# Authentication Microservice
 
-A production-ready ASP.NET Core 8 Authentication Microservice with JWT tokens, refresh tokens, role-based authorization, and BCrypt password hashing.
+A small **ASP.NET Core 8** service handling registration, login, token refresh and logout, with
+role-based authorisation. Six endpoints, cleanly layered.
 
-## ? Features
-
-- **User Registration** - Create new user accounts with email and password
-- **User Login** - Authenticate users and issue JWT access tokens
-- **JWT Tokens** - Short-lived access tokens (60 minutes) with role claims
-- **Refresh Tokens** - Long-lived tokens (7 days) stored in database for token renewal
-- **Token Refresh** - Issue new access tokens without re-authentication
-- **Logout** - Revoke refresh tokens to prevent further use
-- **Role-Based Authorization** - Support for User and Admin roles
-- **Password Hashing** - Secure BCrypt algorithm (never store plain passwords)
-- **Protected Endpoints** - API endpoints with [Authorize] attribute
-- **Swagger Documentation** - Built-in OpenAPI documentation with JWT support
-- **Clean Architecture** - Organized layers (Controllers, Services, Data)
-- **Entity Framework Core** - ORM with SQL Server database
-- **Async/Await** - Asynchronous operations throughout
-
-## ??? Architecture
-
-```
-HTTP Request
-    ?
-AuthController (Entry point, validation)
-    ?
-IAuthService (Business logic)
-    ?? AuthService (Implementation)
-    ?? IJwtService (Token generation)
-         ?? JwtService (JWT & Refresh token creation)
-    ?
-AuthDbContext (Data access)
-    ?? Users Table
-    ?? RefreshTokens Table
-    ?
-SQL Server Database
-```
-
-## ?? Project Structure
-
-```
-Authentication Microservice/
-?
-?? Models/
-?  ?? User.cs                 # User entity
-?  ?? RefreshToken.cs         # Refresh token entity
-?
-?? DTOs/
-?  ?? RegisterRequest.cs      # Register endpoint request
-?  ?? LoginRequest.cs         # Login endpoint request
-?  ?? AuthResponse.cs         # Common response format
-?  ?? RefreshRequest.cs       # Token refresh request
-?
-?? Services/
-?  ?? IAuthService.cs         # Authentication interface
-?  ?? AuthService.cs          # Register, Login, Refresh, Logout logic
-?  ?? IJwtService.cs          # JWT generation interface
-?  ?? JwtService.cs           # Token generation implementation
-?
-?? Controllers/
-?  ?? AuthController.cs       # /api/auth/* endpoints
-?
-?? Data/
-?  ?? AuthDbContext.cs        # EF Core DbContext configuration
-?
-?? Program.cs                 # Dependency injection & middleware
-?? appsettings.json           # Configuration
-?
-?? CONTROL_FLOW.md            # Detailed control flow documentation
-?? SETUP_GUIDE.md             # Installation and setup guide
-?? README.md                  # This file
-```
-
-## ?? Quick Start
-
-### Prerequisites
-- .NET 8 SDK
-- SQL Server 2019+
-- Visual Studio 2022 or VS Code
-
-### 1. Configure Database
-Edit `appsettings.json`:
-```json
-"ConnectionStrings": {
-  "DefaultConnection": "Server=.;Database=AuthServiceDB;Trusted_Connection=true;Encrypt=false;TrustServerCertificate=true;"
-}
-```
-
-### 2. Create Database
-Open Package Manager Console:
-```powershell
-Add-Migration InitialCreate
-Update-Database
-```
-
-### 3. Run Application
-```bash
-dotnet run
-```
-
-Access Swagger: `https://localhost:7000/swagger`
-
-## ?? API Endpoints
-
-### Public Endpoints
-
-**POST /api/auth/register**
-- Create new user account
-- Request: `{ name, email, password }`
-- Response: User details + success message
-
-**POST /api/auth/login**
-- Authenticate user
-- Request: `{ email, password }`
-- Response: AccessToken, RefreshToken, User details
-
-**POST /api/auth/refresh**
-- Get new access token using refresh token
-- Request: `{ refreshToken }`
-- Response: New AccessToken
-
-### Protected Endpoints (Requires JWT)
-
-**POST /api/auth/logout**
-- Revoke refresh token
-- Request: `{ refreshToken }`
-- Headers: `Authorization: Bearer {accessToken}`
-- Response: Success message
-
-**GET /api/auth/profile**
-- Get current user profile
-- Headers: `Authorization: Bearer {accessToken}`
-- Response: User ID, Email, Role
-
-**GET /api/auth/admin-only**
-- Admin-only endpoint (requires Role = "Admin")
-- Headers: `Authorization: Bearer {accessToken}`
-- Response: Success message
-
-## ?? Security
-
-### Password Security
-- Passwords hashed with BCrypt algorithm
-- Salts automatically generated per password
-- Plain passwords never stored in database
-
-### JWT Tokens
-- Signed with HMAC-SHA256
-- Contains: User ID, Email, Role
-- Includes expiration time
-- Validated on every protected request
-
-### Token Expiration
-- **AccessToken**: 60 minutes (short-lived for API calls)
-- **RefreshToken**: 7 days (long-lived for token renewal)
-- Can be revoked via logout endpoint
-
-### Database Storage
-- RefreshTokens stored in database
-- Each token linked to user
-- Can be revoked (IsRevoked flag)
-- Automatic cascade delete when user is deleted
-
-## ?? Database Schema
-
-### Users Table
-```sql
-CREATE TABLE Users (
-    Id INT PRIMARY KEY IDENTITY,
-    Name VARCHAR(255) NOT NULL,
-    Email VARCHAR(255) UNIQUE NOT NULL,
-    PasswordHash VARCHAR(MAX) NOT NULL,
-    Role VARCHAR(50) NOT NULL DEFAULT 'User',
-    CreatedAt DATETIME NOT NULL
-);
-```
-
-### RefreshTokens Table
-```sql
-CREATE TABLE RefreshTokens (
-    Id INT PRIMARY KEY IDENTITY,
-    Token VARCHAR(MAX) UNIQUE NOT NULL,
-    UserId INT NOT NULL FOREIGN KEY REFERENCES Users(Id),
-    ExpiresAt DATETIME NOT NULL,
-    IsRevoked BIT NOT NULL DEFAULT 0
-);
-```
-
-## ?? Configuration
-
-### appsettings.json
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "YOUR_CONNECTION_STRING"
-  },
-  "Jwt": {
-    "Key": "YOUR_SECRET_KEY_MIN_32_CHARS",
-    "Issuer": "AuthServiceAPI",
-    "Audience": "AuthServiceUsers",
-    "ExpiresInMinutes": 60
-  }
-}
-```
-
-**Important Production Settings:**
-- Use strong random Key (min 32 characters)
-- Use HTTPS only
-- Store secrets in Azure Key Vault or similar
-- Implement rate limiting
-- Enable CORS carefully
-
-## ?? Dependency Injection
-
-All services automatically injected via constructor:
-
-```csharp
-public class AuthController : ControllerBase
-{
-    private readonly IAuthService _authService;
-    
-    public AuthController(IAuthService authService)
-    {
-        _authService = authService;
-    }
-}
-```
-
-**Registered Services:**
-- `AuthDbContext` - Database context
-- `IAuthService` - Authentication service
-- `IJwtService` - JWT token service
-- Authentication middleware
-- Authorization middleware
-
-## ?? Testing Endpoints
-
-### Register User
-```bash
-curl -X POST https://localhost:7000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John","email":"john@test.com","password":"Pass123!"}'
-```
-
-### Login
-```bash
-curl -X POST https://localhost:7000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"john@test.com","password":"Pass123!"}'
-```
-
-Response:
-```json
-{
-  "success": true,
-  "message": "Login successful",
-  "accessToken": "eyJhbGc...",
-  "refreshToken": "AbCdEf...",
-  "user": {
-    "id": 1,
-    "name": "John",
-    "email": "john@test.com",
-    "role": "User"
-  }
-}
-```
-
-### Access Protected Endpoint
-```bash
-curl -X GET https://localhost:7000/api/auth/profile \
-  -H "Authorization: Bearer eyJhbGc..."
-```
-
-## ??? Development
-
-### Project Built With
-- **.NET 8** - Latest .NET framework
-- **ASP.NET Core** - Web API framework
-- **Entity Framework Core** - ORM
-- **SQL Server** - Database
-- **JWT Bearer** - Token authentication
-- **BCrypt.Net-Next** - Password hashing
-- **Swagger/OpenAPI** - API documentation
-
-### Code Style
-- Clean architecture principles
-- Dependency injection pattern
-- Async/await throughout
-- DTOs for API contracts
-- Service layer abstraction
-- Entity Framework best practices
-
-## ?? Documentation
-
-See detailed documentation in:
-- **CONTROL_FLOW.md** - Request/response flow through system
-- **SETUP_GUIDE.md** - Installation and configuration
-
-## ?? Error Handling
-
-All endpoints return consistent response format:
-
-**Success:**
-```json
-{
-  "success": true,
-  "message": "Operation successful",
-  "accessToken": "...",
-  "user": {...}
-}
-```
-
-**Error:**
-```json
-{
-  "success": false,
-  "message": "Error description"
-}
-```
-
-## ?? Token Refresh Flow
-
-```
-1. User logs in ? Receive AccessToken (60 min) + RefreshToken (7 days)
-2. Use AccessToken for API calls
-3. After 60 minutes, AccessToken expires
-4. Send RefreshToken to /api/auth/refresh
-5. Receive new AccessToken (valid for 60 min)
-6. Continue making API calls with new token
-7. Repeat steps 3-6 as needed
-8. Call /api/auth/logout to revoke RefreshToken
-```
-
-## ?? Admin Setup
-
-Create admin user:
-
-1. Register user normally
-2. Open SQL Server Management Studio
-3. Run SQL query:
-```sql
-UPDATE Users SET Role = 'Admin' WHERE Email = 'admin@example.com'
-```
-4. User now has access to `/api/auth/admin-only`
-
-## ?? Troubleshooting
-
-**Issue:** Database connection fails
-- Verify SQL Server is running
-- Check connection string
-- Verify server name is correct
-- Check authentication (Windows/SQL)
-
-**Issue:** 401 Unauthorized errors
-- Verify JWT token is valid
-- Check token expiration
-- Ensure Authorization header format: `Bearer {token}`
-- Get new token using refresh endpoint
-
-**Issue:** 403 Forbidden on admin endpoint
-- User must have Role = "Admin"
-- Update user role in database
-
-**Issue:** Build errors with BCrypt
-- Clean and rebuild project
-- Ensure BCrypt.Net-Next package is installed
-- Check using statement: `using BC = BCrypt.Net.BCrypt;`
-
-## ?? Best Practices
-
-1. ? Never store plain passwords
-2. ? Always use HTTPS in production
-3. ? Implement rate limiting
-4. ? Use strong JWT secret (min 32 chars)
-5. ? Store secrets in secure vault (Azure Key Vault)
-6. ? Validate all input
-7. ? Use async/await
-8. ? Handle exceptions gracefully
-9. ? Keep RefreshTokens in database
-10. ? Rotate JWT secrets periodically
-
-## ?? License
-
-This project is provided as-is for educational and production use.
-
-## ?? Support
-
-For issues or questions:
-1. Check CONTROL_FLOW.md for detailed flow documentation
-2. Review SETUP_GUIDE.md for configuration help
-3. Examine code comments for implementation details
-4. Ensure database is properly created and migrated
+> **Scope, honestly:** this is a focused learning project — roughly 500 lines — built to get every
+> authentication decision right rather than to be large. If you are evaluating it, the useful question is
+> not "how big is it" but "can he explain each choice", and the section below is there so you can check.
 
 ---
 
-**Ready to use!** Follow SETUP_GUIDE.md to get started.
+## Stack
+
+| | |
+|---|---|
+| Framework | ASP.NET Core 8 Web API |
+| Data | Entity Framework Core 8, SQL Server |
+| Auth | JWT bearer (`Microsoft.AspNetCore.Authentication.JwtBearer`) |
+| Hashing | BCrypt.Net-Next |
+| Docs | Swashbuckle / Swagger with a Bearer security definition |
+
+## Endpoints
+
+| Method | Route | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/api/Auth/register` | — | Create an account; password hashed with BCrypt |
+| `POST` | `/api/Auth/login` | — | Return an access token + refresh token |
+| `POST` | `/api/Auth/refresh` | — | Exchange a valid refresh token for a new access token |
+| `POST` | `/api/Auth/logout` | Bearer | Revoke the refresh token |
+| `GET` | `/api/Auth/profile` | Bearer | Read claims from the validated token |
+| `GET` | `/api/Auth/admin-only` | Bearer, `Admin` | Demonstrates role-gated authorisation |
+
+---
+
+## The decisions worth defending
+
+**Two tokens, not one.** A short-lived access token (60 minutes, configurable) carries the claims; a
+long-lived refresh token (7 days) lives in the database as a row with `ExpiresAt` and `IsRevoked`. Logout
+flips `IsRevoked`. The point is that a stateless JWT cannot be revoked — so the thing that *can* be
+revoked is kept in a place that has state.
+
+**`ClockSkew = TimeSpan.Zero`.** The .NET default is five minutes of grace, which means a token you
+believe expired keeps working for another five minutes. Most tutorials never touch this. Here it is set to
+zero, so expiry means expiry.
+
+**Issuer *and* audience are both validated.** Validating the signature alone proves the token was signed
+by a key you trust — not that it was minted for this application. Both are checked.
+
+**Refresh tokens come from a CSPRNG, not a GUID.** 64 bytes from `RandomNumberGenerator`, base64-encoded.
+A `Guid.NewGuid()` is not designed to be unguessable and should not be used as a credential.
+
+**BCrypt, with its own salt.** Not SHA-256, not MD5, and no hand-rolled salting. BCrypt is deliberately
+slow and stores the salt and work factor in the hash string.
+
+**Secrets are not in source.** The JWT key, issuer and audience come from configuration.
+`appsettings.json` here holds placeholders.
+
+---
+
+## Layout
+
+```
+Controllers/AuthController.cs     six endpoints, no logic
+Services/IAuthService.cs          registration, login, refresh, logout
+Services/IJwtService.cs           token generation only
+Data/AuthDbContext.cs             EF Core context
+Models/                           User, RefreshToken
+DTOs/                             request and response shapes
+Migrations/                       InitialCreate
+```
+
+Controllers → Services → DbContext, everything behind an interface and wired through dependency
+injection. The controller decides HTTP status codes and nothing else.
+
+---
+
+## Running it
+
+Needs the .NET 8 SDK and SQL Server (LocalDB is fine).
+
+```bash
+# point at your database
+#   appsettings.json → ConnectionStrings:DefaultConnection
+# set a JWT key of at least 32 characters
+#   appsettings.json → Jwt:Key, Jwt:Issuer, Jwt:Audience
+
+dotnet restore
+dotnet run
+```
+
+Migrations are applied at startup (`db.Database.Migrate()`), so the database is created on first run.
+Swagger UI is at `/swagger` in development — use the **Authorize** button to paste a token and try the
+protected routes.
+
+---
+
+## Known limitations
+
+These are deliberate omissions for a project of this size, not oversights:
+
+- **Refresh tokens are not rotated.** Refreshing returns a new access token but reuses the same refresh
+  token. Rotation with reuse-detection would be the next step.
+- **No rate limiting** on login, so nothing slows down a brute-force attempt.
+- **No email verification or password reset.**
+- **Refresh tokens are stored in plaintext.** Hashing them, as passwords are, would mean a leaked
+  database table is not a set of live credentials.
+- **No tests.** For a service about security this is the gap I would close first.
+
+## Built by
+
+Malik Shujaat Ali — [github.com/MalikShujaatAli](https://github.com/MalikShujaatAli) ·
+[linkedin.com/in/malik-shujaat-ali](https://www.linkedin.com/in/malik-shujaat-ali)
